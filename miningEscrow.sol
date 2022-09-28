@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.5.8;
+pragma solidity 0.6.8;
 
 import "./TRC20.sol";
 import "./TRC20Detailed.sol";
@@ -26,7 +26,7 @@ contract MudMiningEscrow {
     mapping (address => Cursor) private _cursors;
         
     MudTestToken token;
-    address admin;
+    address immutable admin;
 
     
     constructor() public {
@@ -35,10 +35,10 @@ contract MudMiningEscrow {
     }
     
 
-    function deposit(uint256 amount, uint8 duration) public returns (uint256) {
-        require(msg.sender != admin);
-        require(duration == 3 || duration == 6 || duration == 12);
-        require(amount > 0);
+    function deposit(uint256 amount, uint8 duration) external returns (uint256) {
+        require(msg.sender != admin, "Not admin !");
+        require(duration == 3 || duration == 6 || duration == 12, "Only 3,6,9 allowed !");
+        require(amount > 0, "amount should > 0 !");
         
         if (_cursors[msg.sender].start == 0) {
             _cursors[msg.sender].start = 1;
@@ -54,29 +54,29 @@ contract MudMiningEscrow {
         _logbook[msg.sender][end].endTime = now + secPerMonth * duration;
         _logbook[msg.sender][end].amount = amount;
         
-        token.transferFrom(msg.sender, address(this), amount);
+        require(token.transferFrom(msg.sender, address(this), amount), "Token transferFrom failed !");
         
         return end;
     }
     
-    function breakContract(uint256 contractId) public returns(uint256, uint256) {
-        require(msg.sender != admin);
-        require(contractId > 0);
-        require(contractId >= _cursors[msg.sender].start && contractId <= _cursors[msg.sender].end);
-        require(_logbook[msg.sender][contractId].amount > 0);
-        require(now > _logbook[msg.sender][contractId].startTime);
+    function breakContract(uint256 contractId) external returns(uint256, uint256) {
+        require(msg.sender != admin, "Not admin !");
+        require(contractId > 0, "contractId should > 0 !");
+        require(contractId >= _cursors[msg.sender].start && contractId <= _cursors[msg.sender].end, "Invalid contractId!");
+        require(_logbook[msg.sender][contractId].amount > 0, "No token in contract !");
+        require(now > _logbook[msg.sender][contractId].startTime, "time should > contract startTime");
         
         if (now > _logbook[msg.sender][contractId].endTime) {
             return (0, _logbook[msg.sender][contractId].amount); //0 burnt, all amount free for withdraw
-        } else if (now + 86400 >= _logbook[msg.sender][contractId].endTime) { //86400
+        } else if (now + 86400 >= _logbook[msg.sender][contractId].endTime) { //the contract will end sooner than 24 hours so no need to break earlier. burnAmount == contract amount means no break needed
             return (_logbook[msg.sender][contractId].amount, _logbook[msg.sender][contractId].amount); //all amount still waiting for mature within 24 hrs        
-        } else {
+        } else { //if (now + 86400 < _logbook[msg.sender][contractId].endTime), burn 20% tokens immediately and end the contract after 24 hours from now before the end time
             //burn 20%
             uint256 burnAmount = _logbook[msg.sender][contractId].amount.div(5);
             _logbook[msg.sender][contractId].amount = _logbook[msg.sender][contractId].amount.sub(burnAmount);
             _logbook[msg.sender][contractId].endTime = now + 86400; //86400
 
-            token.increaseAllowance(address(this), burnAmount);
+            require(token.increaseAllowance(address(this), burnAmount), "increaseAllowance failed!");
             token.burnFrom(address(this), burnAmount);
             
             return (burnAmount, _logbook[msg.sender][contractId].amount);
@@ -84,8 +84,8 @@ contract MudMiningEscrow {
     }
     
     
-    function checkBalance(address addressIn) public view returns (uint256, uint256) {
-        require(addressIn != address(0));
+    function checkBalance(address addressIn) external view returns (uint256, uint256) {
+        require(addressIn != address(0), "Blackhole address not allowed!");
         
         address addressToCheck = msg.sender;
         
@@ -93,9 +93,9 @@ contract MudMiningEscrow {
             addressToCheck = addressIn;
         }
         
-        require(_cursors[addressToCheck].start <= _cursors[addressToCheck].end, "start > end");
+        require(_cursors[addressToCheck].start <= _cursors[addressToCheck].end, "Nothing in the mining logbook!");
 
-        if (_cursors[addressToCheck].start > _cursors[addressToCheck].end || _cursors[addressToCheck].start == 0) {
+        if (_cursors[addressToCheck].start == 0) {
             return (0, 0);
         }
         
@@ -117,10 +117,10 @@ contract MudMiningEscrow {
         return (freeAmount, lockedAmount);
     }
     
-    function Withdraw() public returns (uint256, uint256) {
-        require(msg.sender != admin);
-        require(_cursors[msg.sender].start > 0);
-        require(_cursors[msg.sender].start <= _cursors[msg.sender].end, "start > end");
+    function Withdraw() external returns (uint256, uint256) {
+        require(msg.sender != admin, "Not admin !");
+        require(_cursors[msg.sender].start > 0, "No mining contracts.");
+        require(_cursors[msg.sender].start <= _cursors[msg.sender].end, "Invalid mining start,end pointers!");
         
         uint256 freeAmount = 0;
         uint256 lockedAmount = 0;
@@ -149,8 +149,7 @@ contract MudMiningEscrow {
         }
         
         if (freeAmount > 0) {
-            token.transfer(msg.sender, freeAmount);
-            token.increaseAllowance(msg.sender, freeAmount);
+            require(token.transfer(msg.sender, freeAmount), "Token transfer failed !");                       
         }
         
         return (freeAmount, lockedAmount);

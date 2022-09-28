@@ -1,5 +1,5 @@
-pragma solidity ^0.5.8;
-
+// SPDX-License-Identifier: MIT
+pragma solidity 0.6.8;
 /**
  * @dev Interface of the TRC20 standard as defined in the EIP. Does not include
  * the optional functions; to access them see {TRC20Detailed}.

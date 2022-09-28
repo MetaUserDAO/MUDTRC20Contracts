@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.5.8;
+pragma solidity 0.6.8;
 
 import "./TRC20.sol";
 import "./TRC20Detailed.sol";
@@ -11,12 +11,15 @@ import "./UtilityFunctions.sol";
 contract MudABRoundReleaseBank {
     using SafeMath for uint256;
      
-    address admin; //contract creator
-    uint256 constant angelRoundLimit = 250000000000000;//rouna A and B total limit 250000000 MUD
-    uint256 constant dailyRate = 9259; //0.0009259 daily release rate 0.09259%
+    address immutable admin; //contract creator
+    uint256 constant ABRoundLimit = 2.5e14;//250000000000000;//rouna A and B total limit 250000000 MUD
+    uint256 constant dailyRate = 92590; //0.0009259 daily release rate 0.09259%
     uint constant secPerDay = 86400;
- 
+    uint256 private _icoDepositTotal;
+    bool private _icoFinished;
     MudTestToken token;
+
+    event icodeposit(address indexed investorAddress, uint256 amount, uint256 balance);
                                                
     struct Transaction {
         bool locked;
@@ -25,15 +28,10 @@ contract MudABRoundReleaseBank {
         uint256 dailyReleaseAmount;
     }
     
-    mapping(address => Transaction) bank;
-    
-    modifier onlyAdmin {
-        require(msg.sender == admin, "Only admin can deposit.");
-        _;
-    }
-    
+    mapping(address => Transaction) bank;   
+   
     constructor() public {
-        admin = msg.sender;
+        admin = msg.sender;//set contract owner, which is the MetaUserDAO team administrator account with multisig transaction setup.
 
         token = UtilityFunctions.getMudToken();//MudTestToken(mudtTokenContractAddr);
     }
@@ -44,22 +42,26 @@ contract MudABRoundReleaseBank {
     * parameters:
     *     investorAddress: AB round investor address 
     *     amount: amount of MUD coin received from AB round 
-    * return:  total coins locked in the contract
+    * return:  total coins locked in the contract    
     */
-    function icoDeposit(address investorAddress, uint256 amount) onlyAdmin public returns (uint256) {
+    function icoDeposit(address investorAddress, uint256 amount) external returns (uint256) {
+        require(msg.sender == admin, "Only admin can deposit.");
+        require(!_icoFinished, "ICO finished!");
         require(bank[investorAddress].balance == 0, "balance is not 0.");
         require(amount > 0, "amount should > 0");
         address contractorAddr = address(this);
-        require(amount + token.balanceOf(contractorAddr) <= angelRoundLimit, "amount overflow!");
+        require(amount.add(_icoDepositTotal) <= ABRoundLimit, "amount overflow!");
         require(!bank[investorAddress].locked, "already locked.");
          
         bank[investorAddress].lastTime = now;
         bank[investorAddress].balance = amount;
-        bank[investorAddress].dailyReleaseAmount = amount.mul(dailyRate).div(10000000); //amount * dailyRate / 100000000;
+        bank[investorAddress].dailyReleaseAmount = amount.mul(dailyRate).div(1e8); //amount * dailyRate / 100000000;
         bank[investorAddress].locked = true;
-        token.icoTransferFrom(msg.sender, contractorAddr, amount);
+        _icoDepositTotal = _icoDepositTotal.add(amount);
 
-        
+        require(token.transferFrom(msg.sender, contractorAddr, amount), "transferFrom faied!"); //check the return value, it should be true
+       
+        emit icodeposit(investorAddress, amount, token.balanceOf(contractorAddr));
         return token.balanceOf(contractorAddr);
     }
     
@@ -68,8 +70,8 @@ contract MudABRoundReleaseBank {
      * returns: 
      *         (free MUD coins ready for withdraw, total MUD coins of the investor in the contract)
      */
-    function checkBalance(address addressIn) public view returns  (uint256 , uint256 ) {
-        require(addressIn != address(0));
+    function checkBalance(address addressIn) external view returns  (uint256 , uint256 ) {
+        require(addressIn != address(0), "Blackhole address not allowed!");
         
         address addressToCheck = msg.sender;
         
@@ -77,13 +79,13 @@ contract MudABRoundReleaseBank {
             addressToCheck = addressIn;
         }
 
-        require(now > bank[addressToCheck].lastTime, "now < depositTime");
+        require(now > bank[addressToCheck].lastTime, "now time < lastTime");
         
         if (bank[addressToCheck].balance <= 0) {
             return (0, 0);
         }
         
-        uint256 freeAmount = (now - bank[addressToCheck].lastTime) / secPerDay * bank[addressToCheck].dailyReleaseAmount;
+        uint256 freeAmount = SafeMath.mul(now - bank[addressToCheck].lastTime, bank[addressToCheck].dailyReleaseAmount).div(secPerDay);
         
         if (freeAmount > bank[addressToCheck].balance) {
             freeAmount = bank[addressToCheck].balance;
@@ -96,13 +98,13 @@ contract MudABRoundReleaseBank {
      * parameters: NONE 
      * returns:  (released amount, amount still locked in the contract)
      */
-    function releaseToken() public returns  (uint256, uint256) {
+    function releaseToken() external returns  (uint256, uint256) {
         require(msg.sender != admin, "msg.send == admin");
         require(bank[msg.sender].balance > 0, "balance <= 0");
         require(now > bank[msg.sender].lastTime + secPerDay, "now < lastTime + secPerDay");
         
         //calculate free amount
-        uint256 freeAmount = (now - bank[msg.sender].lastTime) / secPerDay * bank[msg.sender].dailyReleaseAmount;
+        uint256 freeAmount = SafeMath.mul(now - bank[msg.sender].lastTime, bank[msg.sender].dailyReleaseAmount).div(secPerDay);
         
         if (freeAmount > bank[msg.sender].balance) {
             freeAmount = bank[msg.sender].balance;
@@ -110,9 +112,18 @@ contract MudABRoundReleaseBank {
         
         bank[msg.sender].lastTime = now;
         bank[msg.sender].balance = bank[msg.sender].balance.sub(freeAmount);
-        token.transfer(msg.sender, freeAmount);
+        require(token.transfer(msg.sender, freeAmount), "token transfer failed !");
         
         return (freeAmount, bank[msg.sender].balance);
     }
     
+    //mark the ICO finished flag, stop icoDeposit any more and return the icoDepositTotal.
+    //The leftover amount will be bunt by team admininstrators by owner account with multisig setup.
+    function icoFinalised() external returns (uint256) {
+        require(msg.sender == admin, "Not contractor owner!");
+        require(!_icoFinished, "ICO finished already!");
+        
+        _icoFinished = true;
+        return _icoDepositTotal;
+    }
 }

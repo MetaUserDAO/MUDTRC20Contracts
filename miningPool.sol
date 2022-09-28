@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.5.8;
+pragma solidity 0.6.8;
 
 import "./TRC20.sol";
 import "./TRC20Detailed.sol";
@@ -13,24 +13,22 @@ contract MudMiningPool {
     
     //mining DAPP address should be set at the contract deployment time to the correct one
     //this is the address that MUD Mining DAPP used to interact with the daily settlement function
-    address constant miningDappAddress = address(0x4158255d3f5c3faba166fa4b9ccdf108b7f7cf128e);
-    
-    struct Transaction {
-        uint startTime;
-        uint endTime;
-        uint256 amount;
-     }
-     
-    
+    address constant miningDappAddress = address(0x4158255d3f5c3faba166fa4b9ccdf108b7f7cf128e);   
+       
     MudTestToken token;
-    address admin;
+    address immutable admin;
     uint lastHalvingTime;
     uint lastDailySettlementTime;
     uint256 dailyMiningLimit;
+    bool icoDepositDone; //default value is false
     
     uint256 private _totalFreeAmount;
     mapping (address => uint256) private _minedToken;
     
+    event icodeposit(uint256 amount, uint256 balance);
+    event miningstart(uint lastHalvingTime);
+    event dailysettlement(address indexed dappaddr, uint256 burntAmount, uint256 minedAmount, uint256 totalfreeamount);
+
     constructor() public {
         admin = address(msg.sender);
         token = UtilityFunctions.getMudToken();
@@ -39,73 +37,126 @@ contract MudMiningPool {
     
     function icoDeposit(uint256 amount) external returns (uint256) {
         require(msg.sender == admin, "only admin allowed!");
-        require(amount == 450000000000000); //should be 45% of total coins, 450000000 MUD
-        require(token.balanceOf(address(this)) == 0);//only deposit once after ICO
+        require(amount == 4.5e14, "Invalid amount !"); //450000000000000. should be 45% of total coins, 450000000 MUD
+        require(!icoDepositDone, "Only deposit once !");//only deposit once after ICO
         
-        token.transferFrom(msg.sender, address(this), amount);
-        
+        icoDepositDone = true;
+        require(token.transferFrom(msg.sender, address(this), amount), "token transfer failed !");
+        emit icodeposit(amount, token.balanceOf(address(this)));
+
         return token.balanceOf(address(this));
     }
     
-    function miningStart() public returns (uint) {
+    function miningStart() external returns (uint) {
         require(msg.sender == miningDappAddress, "only dapp admin allowed!"); //only dapp address could start miningDappAddress
         require(lastHalvingTime == 0, "only start once!");
         
         lastHalvingTime = now;
         
+        emit miningstart(lastHalvingTime);
         return lastHalvingTime;
     }
     
     //dapp will call this once a day for settlement
-    function dailySettlement(address[] calldata addressArray, uint256[] calldata balanceArray) external returns (uint256){
+    //settlement logic:
+    //   The DAPP should trigger the call and set settlement time stamp exactly the same time each day.
+    //   For the first time settlement, the lastDailySettlementTime is 0 and will be set to settlementTime,
+    //   Because settlementTime is binded to within 1 hour prior to time now by the following validation,
+    //       require(settlementTime <= now && settlementTime.add(3600) >= now, "Settment time expired!");
+    //   the settlementTime is meaningful in reality and will be treated at the start point of the future settlement.
+    //   For all the following dailySettlement calls, the settlement time will be the exact time each day based on
+    //   the first successful settlement.
+    //   In reality, the daily settlement could be failed due to various reasons like lack of transaction fees, tron
+    //   mainnet congestion or downtime. Thus, the dapp has 1 hour to retry each day, which is validated by the 
+    //      require(settlementTime <= now && settlementTime.add(3600) >= now, "Settment time expired!"); 
+    //   If the dapp could not settle successfully witin 1 hour, it should combin the days together in next day with the
+    //   same time stamp spot. That is the dailyMiningLimit will times the dayToSettle and the settlement balance should be
+    //   the combined days as well.
+    function dailySettlement(uint settlementTime, address[] calldata addressArray, uint256[] calldata balanceArray) external returns (uint256, uint256, uint256){
         require(msg.sender == miningDappAddress, "only dapp admin allowed!");
         require(lastHalvingTime > 0, "mining not started !");
-        require(now > lastDailySettlementTime + 86400, "only settle once per day"); //86400
-        require(addressArray.length == balanceArray.length, "arr length not match");
-        
-        lastDailySettlementTime = now;
+        require(addressArray.length == balanceArray.length, "Array length not match");
+        //settlementTime shoule be within 1 hour prior to time now    
+        require(settlementTime <= now && settlementTime.add(3600) >= now, "Settlement time expired!"); //86400
+     
+        uint256 daysToSettle;
+
+        if (lastDailySettlementTime == 0) { //first time of dailySettlement()            
+            daysToSettle = 1;
+        } else { //after first settlement
+            uint256 timeSpan = settlementTime.sub(lastDailySettlementTime);
+
+            require(timeSpan.mod(86400) == 0, "Settlement time should be the same every day!");
+            daysToSettle = timeSpan.div(86400);
+            // daysToSettle == 0 means less than 24 hours
+            // this check is useful if the dapp tries to settle again after the each successful settlement
+            // and within 1 hours of the lastDailySettlementTime, cause the settlementTime could be set to
+            // the same as lastDailySettlementTime. Thus the daysToSettle will be 0
+            // After the 1 hour of the successful settlement, the settlementTime will bind to the 1 hour rule and 
+            // the exact time spot of each day, this will be fine.
+            require(daysToSettle > 0, "Only settle once per day");
+        }    
+                
+        lastDailySettlementTime = settlementTime;
         
         //update mining halving dailyMiningLimit every 4 years
-        if (now > lastHalvingTime + 31536000) {
+        if (now > lastHalvingTime.add(126144000)) {
             dailyMiningLimit = dailyMiningLimit.div(2);
             lastHalvingTime = now;
         }
         
         //iterate through the array and update
-        uint256 totalAmount = 0;
-        
+        uint256 totalAmount; //default 0
+        uint256 combinedDailyLimit = dailyMiningLimit.mul(daysToSettle);
+
         for (uint i = 0; i < addressArray.length; i++) {
             require(balanceArray[i] > 0);
         
             totalAmount = totalAmount.add(balanceArray[i]);
             
-            require(totalAmount <= dailyMiningLimit, "> daily limit!"); // > daily limit, trasaction failed.
+            require(totalAmount <= combinedDailyLimit, "TotalAmount out of daily limit!"); // > daily limit, trasaction failed.
             
             _minedToken[addressArray[i]] = _minedToken[addressArray[i]].add(balanceArray[i]);
         }
         
         _totalFreeAmount = _totalFreeAmount.add(totalAmount);
         
-        assert(_totalFreeAmount <= token.balanceOf(address(this)));
+        require(_totalFreeAmount <= token.balanceOf(address(this)), "Not enough tokens available !");
         
-        return totalAmount;
+        //burn token from the pool with 2:1 ratio of totalAmount:burntAmount
+        uint256 amountToBurn = totalAmount.div(2);
+        uint256 leftover = token.balanceOf(address(this)).sub(_totalFreeAmount);
+
+        if (leftover < amountToBurn) {
+            amountToBurn = leftover; 
+        }
+
+        if (amountToBurn > 0) { //only burn if the amountToBurn > 0
+            require(token.increaseAllowance(address(this), amountToBurn), "increaseAllowance failed!");
+            token.burnFrom(address(this), amountToBurn);
+        }
+
+        emit dailysettlement(msg.sender, amountToBurn, totalAmount, _totalFreeAmount);
+        return (amountToBurn, totalAmount, _totalFreeAmount);
     }
     
-    function checkBalance() public view returns (uint256) {
-        require(msg.sender != admin && msg.sender != miningDappAddress,"admin and dapp not allowed!");
+    function checkBalance() external view returns (uint256) {
+        require(msg.sender != admin && msg.sender != miningDappAddress,"admin and dapp acc not allowed!");
+        require(lastHalvingTime > 0, "mining not started !");
         
         return _minedToken[msg.sender];
     }
     
     //only the customers can withdraw from wallet
-    function withdraw() public returns (uint256) {
-        require(msg.sender != admin && msg.sender != miningDappAddress,"admin and dapp not allowed!");
-        assert(_minedToken[msg.sender] > 0);
+    function withdraw() external returns (uint256) {
+        require(msg.sender != admin && msg.sender != miningDappAddress,"admin and dapp acc not allowed!");
+        require(lastHalvingTime > 0, "mining not started !");
+        require(_minedToken[msg.sender] > 0, "No token available !");
         
         uint256 amount = _minedToken[msg.sender];
         _minedToken[msg.sender] = 0; 
         _totalFreeAmount = _totalFreeAmount.sub(amount);
-        token.transfer(msg.sender, amount);
+        require(token.transfer(msg.sender, amount), "Token transfer failed !");
         
         return amount;
     }

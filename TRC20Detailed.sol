@@ -1,14 +1,15 @@
-pragma solidity ^0.5.8;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.6.8;
 
 import "./ITRC20.sol";
 
 /**
  * @dev Optional functions from the TRC20 standard.
  */
-contract TRC20Detailed is ITRC20 {
-    string private _name;
-    string private _symbol;
-    uint8 private _decimals;
+abstract contract TRC20Detailed is ITRC20 {
+    string immutable private _name;
+    string immutable private _symbol;
+    uint8 immutable private _decimals;
 
     /**
      * @dev Sets the values for `name`, `symbol`, and `decimals`. All three of
@@ -24,7 +25,7 @@ contract TRC20Detailed is ITRC20 {
     /**
      * @dev Returns the name of the token.
      */
-    function name() public view returns (string memory) {
+    function name() external view returns (string memory) {
         return _name;
     }
 
@@ -32,7 +33,7 @@ contract TRC20Detailed is ITRC20 {
      * @dev Returns the symbol of the token, usually a shorter version of the
      * name.
      */
-    function symbol() public view returns (string memory) {
+    function symbol() external view returns (string memory) {
         return _symbol;
     }
 

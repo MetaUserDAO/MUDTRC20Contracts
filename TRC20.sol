@@ -1,4 +1,5 @@
-pragma solidity ^0.5.8;
+// SPDX-License-Identifier: MIT
+pragma solidity 0.6.8;
 
 import "./ITRC20.sol";
 import "./SafeMath.sol";
@@ -40,14 +41,14 @@ contract TRC20 is ITRC20 {
     /**
      * @dev See {ITRC20-totalSupply}.
      */
-    function totalSupply() public view returns (uint256) {
+    function totalSupply() override external view returns (uint256) {
         return _totalSupply;
     }
 
     /**
      * @dev See {ITRC20-balanceOf}.
      */
-    function balanceOf(address account) public view returns (uint256) {
+    function balanceOf(address account) override external view returns (uint256) {
         return _balances[account];
     }
 
@@ -59,7 +60,7 @@ contract TRC20 is ITRC20 {
      * - `recipient` cannot be the zero address.
      * - the caller must have a balance of at least `amount`.
      */
-    function transfer(address recipient, uint256 amount) public returns (bool) {
+    function transfer(address recipient, uint256 amount) override external returns (bool) {
         _transfer(msg.sender, recipient, amount);
         return true;
     }
@@ -67,7 +68,7 @@ contract TRC20 is ITRC20 {
     /**
      * @dev See {ITRC20-allowance}.
      */
-    function allowance(address owner, address spender) public view returns (uint256) {
+    function allowance(address owner, address spender) override external view returns (uint256) {
         return _allowances[owner][spender];
     }
 
@@ -78,7 +79,7 @@ contract TRC20 is ITRC20 {
      *
      * - `spender` cannot be the zero address.
      */
-    function approve(address spender, uint256 value) public returns (bool) {
+    function approve(address spender, uint256 value) override external returns (bool) {
         _approve(msg.sender, spender, value);
         return true;
     }
@@ -95,13 +96,22 @@ contract TRC20 is ITRC20 {
      * - the caller must have allowance for `sender`'s tokens of at least
      * `amount`.
      */
-    function transferFrom(address sender, address recipient, uint256 amount) public returns (bool) {
-        require(!_frozen);
+    function transferFrom(address sender, address recipient, uint256 amount) override public returns (bool) {
         _transfer(sender, recipient, amount);
         _approve(sender, msg.sender, _allowances[sender][msg.sender].sub(amount));
         return (true);
     }
 
+    /**
+     * Destoys `amount` tokens from `account`.`amount` is then deducted
+     * from the caller's allowance.
+     *
+     * See {_burn} and {_approve}.
+     */
+    function burnFrom(address account, uint256 amount) external {
+        _burn(account, amount);
+        _approve(account, msg.sender, _allowances[account][msg.sender].sub(amount));      
+    }
 
     /**
      * @dev Atomically increases the allowance granted to `spender` by the caller.
@@ -134,23 +144,12 @@ contract TRC20 is ITRC20 {
      * - `spender` must have allowance for the caller of at least
      * `subtractedValue`.
      */
-    function decreaseAllowance(address spender, uint256 subtractedValue) public returns (bool) {
+    function decreaseAllowance(address spender, uint256 subtractedValue) external returns (bool) {
         _approve(msg.sender, spender, _allowances[msg.sender][spender].sub(subtractedValue));
         return true;
     }
 
-    /**
-     * @dev Destoys `amount` tokens from `account`.`amount` is then deducted
-     * from the caller's allowance.
-     *
-     * See {_burn} and {_approve}.
-     */
-    function burnFrom(address account, uint256 amount) public {
-        _burn(account, amount);
-        _approve(account, msg.sender, _allowances[account][msg.sender].sub(amount));
-    }
-
-    /**
+     /**
      * @dev Moves tokens `amount` from `sender` to `recipient`.
      *
      * This is internal function is equivalent to {transfer}, and can be used to
@@ -165,7 +164,7 @@ contract TRC20 is ITRC20 {
      * - `sender` must have a balance of at least `amount`.
      */
     function _transfer(address sender, address recipient, uint256 amount) internal {
-        require(!_frozen);
+        require(!_frozen, "Freezed for mainnet mapping !");
         require(sender != address(0), "TRC20: transfer from the zero address");
         require(recipient != address(0), "TRC20: transfer to the zero address");
 
@@ -229,16 +228,5 @@ contract TRC20 is ITRC20 {
 
         _allowances[owner][spender] = value;
         emit Approval(owner, spender, value);
-    }
-
-    /**
-     * @dev Destoys `amount` tokens from `account`.`amount` is then deducted
-     * from the caller's allowance.
-     *
-     * See {_burn} and {_approve}.
-     */
-    function _burnFrom(address account, uint256 amount) internal {
-        _burn(account, amount);
-        _approve(account, msg.sender, _allowances[account][msg.sender].sub(amount));
     }
 }
