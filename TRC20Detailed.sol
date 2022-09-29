@@ -7,9 +7,9 @@ import "./ITRC20.sol";
  * @dev Optional functions from the TRC20 standard.
  */
 abstract contract TRC20Detailed is ITRC20 {
-    string immutable private _name;
-    string immutable private _symbol;
-    uint8 immutable private _decimals;
+    string private _name;
+    string private _symbol;
+    uint8  private _decimals;
 
     /**
      * @dev Sets the values for `name`, `symbol`, and `decimals`. All three of

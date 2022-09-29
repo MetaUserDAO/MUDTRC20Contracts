@@ -87,8 +87,13 @@ contract MudTeamReleaseBank {
         
         //ensure it is locked
         require(bank[addressToCheck].locked, "token not locked!"); 
-
-        uint256 freeAmount = SafeMath.mul(now - bank[addressToCheck].lastTime, bank[addressToCheck].dailyReleaseAmount).div(secPerDay);
+        
+        //The freeAmount should be matured based on exact times of the 24 hours.
+        //Thus we should calculate the matured days. The leftover time which is not a whole 24 hours
+        //should wait for the next mature time spot.
+        uint256 maturedDays = now.sub(bank[addressToCheck].lastTime).div(secPerDay);
+        uint256 freeAmount = bank[addressToCheck].dailyReleaseAmount.mul(maturedDays);//even 0 matured days will work
+        
         
         if (freeAmount > bank[addressToCheck].balance) {
             freeAmount = bank[addressToCheck].balance;
@@ -105,13 +110,17 @@ contract MudTeamReleaseBank {
         require(bank[msg.sender].lastTime > teamLockingStart + secPerYear, "locking time incorrect!");
         require(now > bank[msg.sender].lastTime + secPerDay, "Only release once per day!");
         
-        //calculate free amount
-        uint256 freeAmount = SafeMath.mul(now - bank[msg.sender].lastTime, bank[msg.sender].dailyReleaseAmount).div(secPerDay); 
+        //The freeAmount should be matured based on exact times of the 24 hours.
+        //Thus we should calculate the matured days. The leftover time which is not a whole 24 hours
+        //should wait for the next mature time spot.
+        uint256 maturedDays = now.sub(bank[msg.sender].lastTime).div(secPerDay);
+        uint256 freeAmount = bank[msg.sender].dailyReleaseAmount.mul(maturedDays);
+        
         if (freeAmount > bank[msg.sender].balance) {
             freeAmount = bank[msg.sender].balance;
         }
         
-        bank[msg.sender].lastTime = now;
+        bank[msg.sender].lastTime = bank[msg.sender].lastTime.add(maturedDays.mul(secPerDay));//should set to the exact spot based on 24 hours
         bank[msg.sender].balance = bank[msg.sender].balance.sub(freeAmount);
         require(token.transfer(msg.sender, freeAmount), "Token transfer failed!");
         

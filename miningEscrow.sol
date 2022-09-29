@@ -149,7 +149,7 @@ contract MudMiningEscrow {
         }
         
         if (freeAmount > 0) {
-            require(token.transfer(msg.sender, freeAmount), "Token transfer failed !");                       
+            require(token.transfer(msg.sender, freeAmount), "Token transfer failed !");           
         }
         
         return (freeAmount, lockedAmount);

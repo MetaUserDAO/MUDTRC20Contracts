@@ -139,7 +139,7 @@ contract MudMiningPool {
         emit dailysettlement(msg.sender, amountToBurn, totalAmount, _totalFreeAmount);
         return (amountToBurn, totalAmount, _totalFreeAmount);
     }
-    
+
     function checkBalance() external view returns (uint256) {
         require(msg.sender != admin && msg.sender != miningDappAddress,"admin and dapp acc not allowed!");
         require(lastHalvingTime > 0, "mining not started !");

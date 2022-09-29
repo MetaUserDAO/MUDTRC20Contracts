@@ -80,7 +80,7 @@ contract MudAngelRoundReleaseBank {
             addressToCheck = addressIn;
         }
 
-        require(now > bank[addressToCheck].lastTime, "now time < lastTime");
+        require(now > bank[addressToCheck].lastTime, "now time should > lastTime");
         
         if (bank[addressToCheck].balance <= 0) {
             return (0, 0);
@@ -114,7 +114,7 @@ contract MudAngelRoundReleaseBank {
         //should wait for the next mature time spot.
         uint256 maturedDays = now.sub(bank[msg.sender].lastTime).div(secPerDay);
         uint256 freeAmount = bank[msg.sender].dailyReleaseAmount.mul(maturedDays);
-
+        
         if (freeAmount > bank[msg.sender].balance) {
             freeAmount = bank[msg.sender].balance;
         }
