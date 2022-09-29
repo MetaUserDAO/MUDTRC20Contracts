@@ -61,7 +61,7 @@ contract MudABRoundReleaseBank {
 
         require(token.transferFrom(msg.sender, contractorAddr, amount), "transferFrom faied!"); //check the return value, it should be true
        
-        emit icodeposit(investorAddress, amount, token.balanceOf(contractorAddr));
+        emit icodeposit(investorAddress, amount, _icoDepositTotal);
         return _icoDepositTotal;
     }
     
