@@ -41,7 +41,7 @@ contract MudAngelRoundReleaseBank {
     * parameters:
     *     investorAddress: angel round investor address 
     *     amount: amount of MUD coin received from angel round 
-    * return:  total coins locked in the contract    
+    * return:  total coins deposited in the contract    
     */
     function icoDeposit(address investorAddress, uint256 amount) external returns (uint256) {
         require(msg.sender == admin, "Only admin can deposit.");
@@ -61,7 +61,7 @@ contract MudAngelRoundReleaseBank {
         require(token.transferFrom(msg.sender, contractorAddr, amount), "transferFrom faied!"); //check the return value, it should be true
         
         emit icodeposit(investorAddress, amount, token.balanceOf(contractorAddr));
-        return token.balanceOf(contractorAddr);
+        return _icoDepositTotal;
     }
     
     

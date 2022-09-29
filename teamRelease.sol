@@ -44,7 +44,7 @@ contract MudTeamReleaseBank {
      * parameters: 
      *    teamMemberAddress : team member wallet address
      *    amount: amount of MUD to be locked
-     *    
+     * return: total coins deposited in the contract   
      */
     function teamMemberDeposit(address teamMemberAddress, uint256 amount) external returns (uint256) {
         require(msg.sender == admin, "Only admin can deposit.");
@@ -62,7 +62,7 @@ contract MudTeamReleaseBank {
 
         require(token.transferFrom(msg.sender, contractorAddr, amount), "transferFrom faied!"); //check the return value, it should be true
         emit icodeposit(teamMemberAddress, amount, token.balanceOf(contractorAddr));
-        return token.balanceOf(contractorAddr);
+        return _icoDepositTotal;
     }
     
      /* investor call this function from the dapp to check the amount of their coins in the  locked contract
